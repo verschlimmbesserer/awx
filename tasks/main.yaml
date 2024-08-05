@@ -1,0 +1,85 @@
+---
+
+- name: Check if python installed
+  ansible.builtin.stat:
+    path: /usr/bin/python
+  register: python
+
+- name: Check if python3 installed
+  ansible.builtin.stat:
+    path: /usr/bin/python3
+  register: python3
+
+- name: Check if ansible is installed
+  ansible.builtin.stat:
+    path: /usr/bin/ansible
+  register: ansible
+
+- name: Check if docker is installed
+  ansible.builtin.stat:
+    path: /usr/bin/docker
+  register: docker
+
+- name: Check if docker compose is installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/docker-compose
+  register: docker_compose
+
+- name: Install pip3 Ubuntu/Debian
+  ansible.builtin.apt:
+    name: python3-pip,python3-docker
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_distribution_major_version|int >=20
+
+- name: Install pip Ubuntu/Debian
+  ansible.builtin.apt:
+    name: python-pip,python-docker
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_distribution_major_version|int < 20
+
+- name: Install dependencies
+  ansible.builtin.apt:
+    name: "{{ awx_dependencies_pkgs }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install requests pip3
+  ansible.builtin.pip:
+    name: requests==2.14.2, docker-compose
+    state: present
+    executable: /usr/bin/pip3
+  when: python3.stat.exists and awx_python_version == 3
+
+- name: Install requests via pip
+  ansible.builtin.pip:
+    name: requests==2.14.2, docker-compose
+    state: present
+    executable: /usr/bin/pip
+  when: python.stat.exists and awx_python_version == 2
+
+- name: Download AWX
+  ansible.builtin.git:
+    repo: https://github.com/ansible/awx.git
+    depth: "50"
+    dest: "{{ awx_install_dir }}"
+    update: false
+
+- name: Deploy awx install inventory
+  ansible.builtin.template:
+    src: inventory.j2
+    dest: "{{ awx_install_dir }}/installer/inventory"
+    mode: "0664"
+  loop: "{{ awx_config | dict2items }}"
+
+- name: Execute awx install playbook
+  ansible.builtin.shell:
+    cmd: /usr/bin/ansible-playbook -i inventory install.yml
+    chdir: "{{ awx_install_dir }}/installer/"
+    executable: /bin/bash
+  register: awx_install
+  changed_when: awx_install.rc != 0
